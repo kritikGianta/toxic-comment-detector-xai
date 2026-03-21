@@ -1,0 +1,25 @@
+{
+  "model": {
+    "name": "distilbert-base-uncased",
+    "max_length": 128,
+    "num_labels": 1
+  },
+  "training": {
+    "epochs": 2,
+    "batch_size": 32,
+    "learning_rate": 3e-05,
+    "weight_decay": 0.01,
+    "warmup_steps": 500,
+    "logging_steps": 100,
+    "eval_steps": 500,
+    "save_steps": 1000,
+    "fp16": true
+  },
+  "data": {
+    "validation_split": 0.1,
+    "random_seed": 42
+  },
+  "output": {
+    "model_dir": "/kaggle/working/exported_model"
+  }
+}

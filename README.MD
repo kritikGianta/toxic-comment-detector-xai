@@ -1,84 +1,82 @@
-🧠 Toxic Comment Detector with Explainable AI
+# Toxic Comment Detector with XAI
 
-An NLP-based toxic comment detection system built using DistilBERT, enhanced with Explainable AI (XAI), counterfactual reasoning, bias analysis, and an experimental rewrite assistant.
+Detects toxic comments and shows you which words made it toxic. Simple as that.
 
-This project focuses not only on what the model predicts, but why it makes those predictions.
+## What does it do?
 
-🚀 Features
-🔹 Toxicity Classification
+- Tells you if a comment is toxic or not (98.6% accuracy)
+- Shows a heatmap of words - red ones are toxic, green ones are fine
+- Suggests how to rewrite toxic comments nicely
+- Can analyze multiple comments at once from a CSV
+- Tests if the model is biased against certain groups
 
-Binary classification: Toxic / Non-toxic
+## How to run it
 
-Outputs a probability score
+**1. Clone and install**
 
-Adjustable decision threshold
+```bash
+git clone https://github.com/kritikGianta/toxic-detect-xai.git
+cd toxic-detect-xai
+pip install -r requirements.txt
+```
 
-🔹 Explainable AI (Integrated Gradients)
+**2. Start the app**
 
-Token-level attribution using Integrated Gradients
+```bash
+streamlit run app.py
+```
 
-Visual heatmap showing words that increase/decrease toxicity
+**3. Open in browser**
 
-🔹 Counterfactual Explanations
+Go to http://localhost:8501
 
-Identifies the most influential word
+That's it. Type a comment and hit Analyze.
 
-Shows how removing it changes toxicity score
+## Files
 
-🔹 “Why This Is Toxic” (Natural Language Explanation)
+| File | What it does |
+|------|--------------|
+| `app.py` | The main web app |
+| `utils.py` | All the ML functions |
+| `config.py` | Settings and word lists |
+| `styles.css` | Makes it look nice |
+| `exported_model/` | The trained model |
+| `kaggle_training.ipynb` | Training code (run on Kaggle with GPU) |
 
-Human-readable explanation combining:
+## How it works (simple version)
 
-Profanity & insult detection
+1. You type a comment
+2. DistilBERT (a language model) reads it
+3. It gives a toxicity score from 0 to 1
+4. Integrated Gradients figures out which words mattered
+5. You see red/green highlighting on words
+6. If toxic, it suggests a nicer way to say it
 
-Aggressive language patterns
+## Training
 
-XAI token importance
+Model was trained on Kaggle (free T4 GPU). Takes about 15 mins.
 
-🔹 Bias & Fairness Analysis ⚖️
+If you want to retrain:
+1. Go to Kaggle, upload `kaggle_training.ipynb`
+2. Add the Jigsaw Toxic Comment dataset
+3. Turn on GPU
+4. Run it
+5. Download the model folder
 
-Evaluates model behavior on neutral identity-based sentences
+## Results
 
-Helps surface potential bias across gender, religion, nationality, etc.
+- ROC-AUC: 0.986
+- F1 Score: 0.84
+- Threshold: 0.61
 
-🔹 Experimental Rewrite Assistant ✍️
+## Built with
 
-Uses XAI to reduce toxicity via phrase and word replacement
-⚠️ Limitation: The rewrite focuses on toxicity reduction and may alter original meaning.
+- PyTorch
+- HuggingFace Transformers
+- Captum (for XAI)
+- Streamlit
+- Plotly
 
-🧠 NLP Techniques Used
+## Author
 
-Transformer-based sequence classification
-
-Contextual embeddings
-
-Token attribution (XAI)
-
-Counterfactual reasoning
-
-Bias evaluation in NLP models
-
-🛠 Tech Stack
-
-Python, PyTorch
-
-HuggingFace Transformers
-
-Captum (XAI)
-
-Streamlit
-
-Plotly
-
-📦 Project Structure
-├── app.py              # Complete Streamlit app (self-contained)
-├── exported_model/     # Trained model & tokenizer
-├── README.md
-
-🎯 Use Cases
-
-Content moderation research
-
-Explainable AI demos
-
-NLP + Responsible AI portfolio project
+Kritik
