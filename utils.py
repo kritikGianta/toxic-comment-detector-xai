@@ -1,20 +1,23 @@
-"""
-Utility functions for toxic comment detection and analysis
-"""
+"""Utility functions for toxic comment detection and analysis."""
 
-import torch
-import numpy as np
 import re
+
+import numpy as np
+import torch
+
 from config import *
+
+SPECIAL_TOKENS = {"[CLS]", "[SEP]", "[PAD]"}
 
 
 def score_toxicity(text, model, tokenizer):
     """Calculate toxicity probability for given text"""
-    if not text or not text.strip():
+    cleaned_text = normalize_text(text)
+    if not cleaned_text:
         return 0.0
 
     inputs = tokenizer(
-        text,
+        cleaned_text,
         return_tensors="pt",
         truncation=True,
         padding=True,
@@ -23,12 +26,51 @@ def score_toxicity(text, model, tokenizer):
 
     # Remove token_type_ids for DistilBERT (it doesn't use them)
     inputs.pop("token_type_ids", None)
+    inputs = {key: value.to(DEVICE) for key, value in inputs.items()}
 
     with torch.no_grad():
         logits = model(**inputs).logits
         prob = torch.sigmoid(logits)[0][0].item()
 
     return prob
+
+
+def batch_score_toxicity(texts, model, tokenizer, batch_size=32):
+    """Score many texts in batches to keep batch analysis responsive."""
+    if not texts:
+        return []
+
+    normalized = [normalize_text(text) for text in texts]
+    scores = []
+
+    for start in range(0, len(normalized), batch_size):
+        batch = normalized[start:start + batch_size]
+        empty_positions = [index for index, text in enumerate(batch) if not text]
+        safe_batch = [text if text else " " for text in batch]
+
+        inputs = tokenizer(
+            safe_batch,
+            return_tensors="pt",
+            truncation=True,
+            padding=True,
+            max_length=MAX_LENGTH
+        )
+        inputs.pop("token_type_ids", None)
+        inputs = {key: value.to(DEVICE) for key, value in inputs.items()}
+
+        with torch.no_grad():
+            logits = model(**inputs).logits
+            probs = torch.sigmoid(logits).squeeze(-1).detach().cpu().tolist()
+
+        if not isinstance(probs, list):
+            probs = [float(probs)]
+
+        for position in empty_positions:
+            probs[position] = 0.0
+
+        scores.extend(float(prob) for prob in probs)
+
+    return scores
 
 
 def predict(text, model, tokenizer, threshold):
@@ -40,15 +82,18 @@ def predict(text, model, tokenizer, threshold):
 
 def explain_text(text, model, tokenizer, ig):
     """Generate token-level attributions using Integrated Gradients"""
-    if not text or not text.strip():
+    cleaned_text = normalize_text(text)
+    if not cleaned_text:
         return [], np.array([])
 
     encoded = tokenizer(
-        text,
+        cleaned_text,
         return_tensors="pt",
         truncation=True,
         max_length=MAX_LENGTH
     )
+    encoded.pop("token_type_ids", None)
+    encoded = {key: value.to(DEVICE) for key, value in encoded.items()}
 
     input_ids = encoded["input_ids"]
     attention_mask = encoded["attention_mask"]
@@ -96,7 +141,7 @@ def explain_why_toxic(text, tokens, scores, threshold, prob):
     top_tokens = [
         tok.replace("##", "")
         for tok, score in zip(tokens, scores)
-        if score > ATTRIBUTION_THRESHOLD and tok not in ["[CLS]", "[SEP]", "[PAD]"]
+        if score > ATTRIBUTION_THRESHOLD and tok not in SPECIAL_TOKENS
     ]
 
     if top_tokens and len(top_tokens) > 0:
@@ -130,7 +175,7 @@ def counterfactual_analysis(text, tokens, scores, model, tokenizer):
     token_impacts = []
 
     for tok, score in zip(tokens, scores):
-        if score <= 0 or tok in ["[CLS]", "[SEP]", "[PAD]"]:
+        if score <= 0 or tok in SPECIAL_TOKENS:
             continue
 
         clean_tok = tok.replace("##", "")
@@ -198,85 +243,177 @@ def replace_individual_words(text):
     return result
 
 
-def rewrite_text(text, model, tokenizer):
-    """
-    Attempt to reduce toxicity through word/phrase replacement.
-    Returns (rewritten_text, original_score, new_score)
-    """
-    original_prob = score_toxicity(text, model, tokenizer)
+def normalize_text(text):
+    """Collapse whitespace and convert non-string inputs safely."""
+    if text is None:
+        return ""
 
-    # If already non-toxic, don't rewrite
-    if original_prob < DEFAULT_THRESHOLD * 0.8:
-        return None, original_prob, original_prob
+    cleaned = str(text).replace("\r", " ").replace("\n", " ")
+    cleaned = re.sub(r"\s+", " ", cleaned).strip()
+    return cleaned
 
-    current_text = text
-    current_prob = original_prob
 
-    for iteration in range(MAX_REWRITE_PASSES):
-        best_candidate = current_text
-        best_score = current_prob
+def _match_replacement_style(source, replacement):
+    if not replacement:
+        return replacement
+    if source.isupper():
+        return replacement.upper()
+    if source.istitle():
+        return replacement.capitalize()
+    return replacement
 
-        # Strategy 1: Word-level replacement
-        candidate = replace_individual_words(current_text)
-        if candidate != current_text:
-            new_score = score_toxicity(candidate, model, tokenizer)
-            if new_score < best_score:
-                best_candidate = candidate
-                best_score = new_score
 
-        # Strategy 2: Find and replace toxic phrases
-        words = current_text.split()
-        for i, word in enumerate(words):
-            word_lower = word.lower().strip(".,!?;:")
+def replace_phrase_case_aware(text, phrase, replacement):
+    """Replace whole phrases while preserving simple casing."""
+    pattern = re.compile(rf"\b{re.escape(phrase)}\b", flags=re.IGNORECASE)
 
-            # Check if this word is toxic
-            is_toxic = (word_lower in PROFANITY_WORDS or
-                       word_lower in INSULT_WORDS or
-                       word_lower in HATE_REPLACEMENTS)
+    def repl(match):
+        matched_text = match.group(0)
+        return _match_replacement_style(matched_text, replacement)
 
-            if is_toxic:
-                # Extract phrase around this word
-                start = max(0, i - 2)
-                end = min(len(words), i + 3)
-                toxic_phrase = " ".join(words[start:end])
+    updated = pattern.sub(repl, text)
+    updated = re.sub(r"\s+", " ", updated).strip()
+    updated = re.sub(r"\s+([,.!?;:])", r"\1", updated)
+    return updated
 
-                # Try replacing with safe phrases
-                for replacement in SAFE_PHRASE_REPLACEMENTS:
-                    candidate = current_text.replace(toxic_phrase, replacement, 1)
-                    candidate = re.sub(r'\s+', ' ', candidate).strip()
 
-                    if candidate and candidate != current_text:
-                        new_score = score_toxicity(candidate, model, tokenizer)
-                        if new_score < best_score:
-                            best_candidate = candidate
-                            best_score = new_score
-                break
+def _dedupe_words(words):
+    seen = set()
+    ordered = []
+    for word in words:
+        key = word.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        ordered.append(word)
+    return ordered
 
-        # Strategy 3: Tone softening (only if still quite toxic)
-        if best_score > DEFAULT_THRESHOLD:
-            for prefix in SOFTENING_PHRASES:
-                candidate = f"{prefix}, {current_text}".capitalize()
-                new_score = score_toxicity(candidate, model, tokenizer)
-                if new_score < best_score:
-                    best_candidate = candidate
-                    best_score = new_score
 
-        # Check if we made improvement
-        if best_score >= current_prob - MIN_IMPROVEMENT:
-            break
+def _top_flagged_words(tokens, scores, limit=3):
+    flagged = []
+    for token, score in sorted(zip(tokens, scores), key=lambda item: item[1], reverse=True):
+        if score <= ATTRIBUTION_THRESHOLD or token in SPECIAL_TOKENS:
+            continue
+        cleaned = token.replace("##", "").strip()
+        if len(cleaned) < 2 or not re.search(r"[A-Za-z]", cleaned):
+            continue
+        flagged.append(cleaned)
+    return _dedupe_words(flagged)[:limit]
 
-        current_text = best_candidate
-        current_prob = best_score
 
-        # Stop if we've made it non-toxic
-        if current_prob < DEFAULT_THRESHOLD:
-            break
+def _apply_replacement_maps(text):
+    updated = text
+    replacement_groups = [
+        PROFANITY_REPLACEMENTS,
+        INSULT_REPLACEMENTS,
+        HATE_REPLACEMENTS,
+    ]
 
-    # Only return rewrite if it's actually better
-    if current_prob < original_prob - MIN_IMPROVEMENT:
-        return current_text, original_prob, current_prob
+    for replacement_group in replacement_groups:
+        for source, target in replacement_group.items():
+            updated = replace_phrase_case_aware(updated, source, target)
 
-    return None, original_prob, original_prob
+    updated = re.sub(r"\s+", " ", updated).strip()
+    updated = re.sub(r"\s+([,.!?;:])", r"\1", updated)
+    return updated
+
+
+def _soften_opening(text):
+    if not text:
+        return text
+
+    first_word = text.split()[0].lower()
+    if first_word in COMMAND_WORDS:
+        return f"Please {text[0].lower() + text[1:]}"
+
+    if re.match(r"^(you\s+are|you're)\b", text, flags=re.IGNORECASE):
+        return re.sub(
+            r"^(you\s+are|you're)\b",
+            "This comes across as",
+            text,
+            count=1,
+            flags=re.IGNORECASE
+        )
+
+    return text
+
+
+def _cleanup_rewrite(text):
+    text = re.sub(r"\s+", " ", text).strip(" ,")
+    text = re.sub(r"\s+([,.!?;:])", r"\1", text)
+    if text and text[-1] not in ".!?":
+        text += "."
+    if text:
+        text = text[0].upper() + text[1:]
+    return text
+
+
+def build_rewrite_rationale(prob, new_prob, flagged_words):
+    """Explain what changed in a concise, human-friendly way."""
+    if not flagged_words:
+        return "The suggestion softens the tone and removes language the model treats as hostile."
+
+    changed_words = ", ".join(f"'{word}'" for word in flagged_words)
+    if new_prob < DEFAULT_THRESHOLD:
+        return f"The suggestion replaces or softens {changed_words} and brings the comment back into a safer range."
+    return f"The suggestion mainly targets {changed_words}, which are the biggest drivers of the score."
+
+
+def rewrite_text(text, model, tokenizer, tokens=None, scores=None):
+    """Generate a more natural respectful rewrite when the score is high enough."""
+    original_text = normalize_text(text)
+    original_prob = score_toxicity(original_text, model, tokenizer)
+
+    if not original_text or original_prob < DEFAULT_THRESHOLD * 0.8:
+        return None, original_prob, original_prob, None
+
+    candidate_pool = []
+
+    direct_replacement = _cleanup_rewrite(_apply_replacement_maps(original_text))
+    if direct_replacement and direct_replacement != _cleanup_rewrite(original_text):
+        candidate_pool.append(direct_replacement)
+
+    softened = _cleanup_rewrite(_soften_opening(direct_replacement or original_text))
+    if softened and softened != _cleanup_rewrite(original_text):
+        candidate_pool.append(softened)
+
+    if tokens is not None and len(tokens) and scores is not None and len(scores):
+        highlighted_words = _top_flagged_words(tokens, scores)
+        trimmed_candidate = original_text
+        for word in highlighted_words:
+            trimmed_candidate = replace_phrase_case_aware(trimmed_candidate, word, "")
+        trimmed_candidate = _cleanup_rewrite(trimmed_candidate)
+        if trimmed_candidate and trimmed_candidate != _cleanup_rewrite(original_text):
+            candidate_pool.append(trimmed_candidate)
+    else:
+        highlighted_words = []
+
+    for phrase in SAFE_PHRASE_REPLACEMENTS:
+        phrase_candidate = _cleanup_rewrite(phrase)
+        if phrase_candidate:
+            candidate_pool.append(phrase_candidate)
+
+    scored_candidates = []
+    seen = set()
+    for candidate in candidate_pool:
+        if not candidate:
+            continue
+        key = candidate.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        candidate_score = score_toxicity(candidate, model, tokenizer)
+        scored_candidates.append((candidate_score, candidate))
+
+    if not scored_candidates:
+        return None, original_prob, original_prob, None
+
+    new_prob, best_candidate = min(scored_candidates, key=lambda item: item[0])
+    if new_prob >= original_prob - MIN_IMPROVEMENT:
+        return None, original_prob, original_prob, None
+
+    rationale = build_rewrite_rationale(original_prob, new_prob, highlighted_words)
+    return best_candidate, original_prob, new_prob, rationale
 
 
 def bias_analysis(model, tokenizer):

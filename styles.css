@@ -1,662 +1,417 @@
-/* Toxic Comment Detector - Polished Figma-Inspired Design */
-
-/* Import fonts */
-@import url('https://fonts.googleapis.com/css2?family=Source+Serif+Pro:wght@400;600;700&family=Space+Mono:wght@400;700&family=Inter:wght@400;500;600;700&display=swap');
-
-* {
-    font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+:root {
+    --paper: #fbf7f1;
+    --paper-strong: #f3ece2;
+    --ink: #1f1b18;
+    --muted: #5c554d;
+    --line: #ddd0bf;
+    --sage: #2f6e62;
+    --sage-soft: #d6ebe6;
+    --accent: #1d4ed8;
+    --accent-deep: #153eaf;
+    --accent-soft: #dbe7ff;
+    --rose: #b13a30;
+    --rose-soft: #f3d8d5;
+    --amber: #b3873b;
+    --card-shadow: 0 18px 40px rgba(55, 42, 29, 0.08);
 }
 
-/* Main app background */
+.stApp,
 .main {
-    background: linear-gradient(180deg, rgba(168,211,255,0.12) 0%, rgba(211,227,239,0.15) 50%, rgba(255,244,223,0.12) 100%);
-    background-attachment: fixed;
+    background:
+        radial-gradient(circle at top left, rgba(214, 196, 168, 0.35), transparent 34%),
+        radial-gradient(circle at top right, rgba(180, 203, 184, 0.32), transparent 28%),
+        linear-gradient(180deg, #f8f2e8 0%, #fbf7f1 52%, #f5efe6 100%);
+    color: var(--ink);
 }
 
-.stApp {
-    background: linear-gradient(180deg, rgba(168,211,255,0.12) 0%, rgba(211,227,239,0.15) 50%, rgba(255,244,223,0.12) 100%);
-    background-attachment: fixed;
-}
-
-/* Content container */
 .block-container {
-    padding: 48px 64px;
-    background: #FFFFFF;
-    border-radius: 24px;
-    margin: 32px auto;
-    max-width: 1400px;
-    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.02), 0 12px 40px rgba(0, 0, 0, 0.08);
-    border: 1px solid #E8ECF4;
+    max-width: 1240px;
+    padding: 36px 40px 56px;
 }
 
-/* Typography */
-h1 {
-    font-family: 'Source Serif Pro', serif !important;
-    color: #000000 !important;
-    font-weight: 700 !important;
+h1, h2, h3, h4 {
+    color: var(--ink) !important;
+    font-family: Georgia, "Palatino Linotype", serif !important;
+    letter-spacing: -0.02em;
+}
+
+p, li, label, span, div {
+    color: var(--ink);
+    font-family: Aptos, "Trebuchet MS", "Segoe UI", sans-serif;
+}
+
+[data-baseweb="select"] *,
+[data-baseweb="popover"] *,
+.stTextArea *,
+.stSelectbox * {
+    color: var(--ink) !important;
+}
+
+[data-testid="stSidebar"] {
+    background: rgba(255, 251, 246, 0.92);
+    border-right: 1px solid rgba(221, 208, 191, 0.75);
+}
+
+[data-testid="stSidebar"] .block-container {
+    padding: 28px 20px;
+}
+
+.sidebar-section {
+    margin-top: 20px;
+    padding: 18px;
+    background: rgba(255, 255, 255, 0.72);
+    border: 1px solid var(--line);
+    border-radius: 18px;
+}
+
+.hero-shell {
+    display: grid;
+    grid-template-columns: 1.6fr 1fr;
+    gap: 24px;
+    padding: 32px;
+    margin-bottom: 28px;
+    border-radius: 28px;
+    background:
+        linear-gradient(135deg, rgba(255, 250, 244, 0.96), rgba(245, 239, 230, 0.94)),
+        linear-gradient(120deg, rgba(111, 127, 107, 0.08), rgba(177, 58, 48, 0.06));
+    border: 1px solid rgba(221, 208, 191, 0.9);
+    box-shadow: var(--card-shadow);
+}
+
+.hero-copy h1 {
+    margin: 0 0 12px;
     font-size: 3.2rem !important;
-    letter-spacing: -1.5px !important;
+    line-height: 1.02;
 }
 
-h2 {
-    font-family: 'Source Serif Pro', serif !important;
-    color: #1a1a1a !important;
-    font-weight: 700 !important;
-    font-size: 1.8rem !important;
-    letter-spacing: -0.5px !important;
-    margin: 32px 0 20px 0 !important;
-    border-bottom: none !important;
-    padding-bottom: 0 !important;
+.hero-copy p {
+    max-width: 720px;
+    margin: 0;
+    font-size: 1.05rem;
+    line-height: 1.7;
+    color: var(--muted);
 }
 
-h3 {
-    font-family: 'Inter', sans-serif !important;
-    color: #1a1a1a !important;
-    font-weight: 600 !important;
-    font-size: 1.25rem !important;
-    margin: 20px 0 12px 0 !important;
+.eyebrow {
+    margin-bottom: 12px;
+    color: var(--accent);
+    font-size: 0.8rem;
+    font-weight: 700;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
 }
 
-p, label, li {
-    color: #1a1a1a !important;
-    font-family: 'Inter', sans-serif !important;
-    line-height: 1.6 !important;
+.hero-panel {
+    align-self: stretch;
+    padding: 24px 24px 18px;
+    border-radius: 22px;
+    background: rgba(255, 255, 255, 0.8);
+    border: 1px solid rgba(221, 208, 191, 0.9);
 }
 
-/* Text colors - but NOT inside buttons */
-.block-container > div > div > div > span,
-.block-container > div > div > div > div:not(.stButton) {
-    color: #1a1a1a;
-    font-family: 'Inter', sans-serif;
-    line-height: 1.6;
+.hero-panel-label {
+    margin-bottom: 12px;
+    font-size: 0.82rem;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--muted);
 }
 
-/* ============================================
-   BUTTONS - Main Styling
-   ============================================ */
-
-/* Primary Button - Black with yellow hover */
-.stButton > button {
-    background: #1a1a1a !important;
-    color: #FFFFFF !important;
-    border: none !important;
-    border-radius: 14px !important;
-    padding: 14px 28px !important;
-    font-weight: 600 !important;
-    font-size: 15px !important;
-    font-family: 'Inter', sans-serif !important;
-    letter-spacing: -0.2px !important;
-    transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1) !important;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15) !important;
-    cursor: pointer !important;
-    min-height: 48px !important;
+.hero-panel ul {
+    margin: 0;
+    padding-left: 18px;
+    line-height: 1.8;
 }
-
-/* Ensure button text is white */
-.stButton > button p,
-.stButton > button span,
-.stButton > button div {
-    color: #FFFFFF !important;
-}
-
-.stButton > button:hover {
-    background: #FFF546 !important;
-    color: #1a1a1a !important;
-    transform: translateY(-2px) !important;
-    box-shadow: 0 8px 24px rgba(255, 245, 70, 0.4) !important;
-}
-
-/* Button text on hover - dark */
-.stButton > button:hover p,
-.stButton > button:hover span,
-.stButton > button:hover div {
-    color: #1a1a1a !important;
-}
-
-.stButton > button:active {
-    transform: translateY(0) !important;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2) !important;
-}
-
-/* Button with full width - Analyze button */
-.stButton > button[data-testid="baseButton-primary"] {
-    background: linear-gradient(135deg, #1a1a1a 0%, #333333 100%) !important;
-    font-size: 16px !important;
-    padding: 16px 32px !important;
-    min-height: 56px !important;
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2) !important;
-}
-
-.stButton > button[data-testid="baseButton-primary"]:hover {
-    background: linear-gradient(135deg, #FFF546 0%, #FFE600 100%) !important;
-    color: #1a1a1a !important;
-    box-shadow: 0 8px 28px rgba(255, 245, 70, 0.5) !important;
-}
-
-/* Secondary buttons */
-.stButton > button[data-testid="baseButton-secondary"] {
-    background: #F6F8FB !important;
-    color: #1a1a1a !important;
-    border: 2px solid #E8ECF4 !important;
-    box-shadow: none !important;
-}
-
-.stButton > button[data-testid="baseButton-secondary"]:hover {
-    background: #1a1a1a !important;
-    color: #FFFFFF !important;
-    border-color: #1a1a1a !important;
-}
-
-/* Download button */
-.stDownloadButton > button {
-    background: linear-gradient(135deg, #10B981 0%, #059669 100%) !important;
-    color: #FFFFFF !important;
-    border: none !important;
-    border-radius: 14px !important;
-    padding: 14px 28px !important;
-    font-weight: 600 !important;
-    font-size: 15px !important;
-    transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1) !important;
-    box-shadow: 0 4px 12px rgba(16, 185, 129, 0.3) !important;
-    min-height: 48px !important;
-}
-
-.stDownloadButton > button:hover {
-    background: linear-gradient(135deg, #059669 0%, #047857 100%) !important;
-    transform: translateY(-2px) !important;
-    box-shadow: 0 8px 24px rgba(16, 185, 129, 0.4) !important;
-}
-
-/* ============================================
-   TEXT INPUT & TEXT AREA
-   ============================================ */
-
-textarea {
-    border-radius: 16px !important;
-    border: 2px solid #E8ECF4 !important;
-    font-size: 16px !important;
-    padding: 18px 20px !important;
-    transition: all 0.2s ease !important;
-    background: #FAFBFC !important;
-    color: #1a1a1a !important;
-    font-family: 'Inter', sans-serif !important;
-    line-height: 1.6 !important;
-}
-
-textarea:focus {
-    border-color: #1a1a1a !important;
-    box-shadow: 0 0 0 4px rgba(26, 26, 26, 0.08) !important;
-    background: #FFFFFF !important;
-    outline: none !important;
-}
-
-textarea::placeholder {
-    color: #9CA3AF !important;
-}
-
-/* Input fields */
-input[type="text"], input[type="number"] {
-    border-radius: 12px !important;
-    border: 2px solid #E8ECF4 !important;
-    padding: 12px 16px !important;
-    font-size: 15px !important;
-    transition: all 0.2s ease !important;
-    background: #FAFBFC !important;
-}
-
-input:focus {
-    border-color: #1a1a1a !important;
-    box-shadow: 0 0 0 4px rgba(26, 26, 26, 0.08) !important;
-    background: #FFFFFF !important;
-}
-
-/* ============================================
-   TABS
-   ============================================ */
 
 .stTabs [data-baseweb="tab-list"] {
-    gap: 4px;
-    background: #F6F8FB;
+    gap: 8px;
     padding: 6px;
-    border-radius: 16px;
-    border: 1px solid #E8ECF4;
+    border-radius: 18px;
+    background: rgba(255, 255, 255, 0.68);
+    border: 1px solid rgba(221, 208, 191, 0.92);
 }
 
 .stTabs [data-baseweb="tab"] {
-    border-radius: 12px;
-    padding: 12px 24px;
-    background-color: transparent;
-    border: none;
-    font-weight: 600;
-    font-size: 14px;
-    color: #6B7280 !important;
-    transition: all 0.2s ease;
-}
-
-.stTabs [data-baseweb="tab"]:hover {
-    color: #1a1a1a !important;
-    background: rgba(255, 255, 255, 0.6);
+    padding: 11px 18px;
+    border-radius: 14px;
+    color: var(--muted) !important;
+    font-weight: 700;
 }
 
 .stTabs [aria-selected="true"] {
-    background: #FFFFFF !important;
-    color: #1a1a1a !important;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08) !important;
+    background: #fffdfa !important;
+    color: var(--ink) !important;
+    box-shadow: 0 10px 22px rgba(55, 42, 29, 0.08);
 }
 
-.stTabs [aria-selected="true"] span {
-    color: #1a1a1a !important;
-}
-
-/* ============================================
-   ALERTS & NOTIFICATIONS
-   ============================================ */
-
-div[data-baseweb="notification"] {
-    border-radius: 14px !important;
-    padding: 16px 20px !important;
-    margin: 16px 0 !important;
-    border: none !important;
-}
-
-div[data-baseweb="notification"][kind="info"] {
-    background: linear-gradient(135deg, #EFF6FF 0%, #DBEAFE 100%) !important;
-    border-left: 4px solid #3B82F6 !important;
-}
-
-div[data-baseweb="notification"][kind="success"] {
-    background: linear-gradient(135deg, #ECFDF5 0%, #D1FAE5 100%) !important;
-    border-left: 4px solid #10B981 !important;
-}
-
-div[data-baseweb="notification"][kind="warning"] {
-    background: linear-gradient(135deg, #FFFBEB 0%, #FEF3C7 100%) !important;
-    border-left: 4px solid #F59E0B !important;
-}
-
-div[data-baseweb="notification"][kind="error"] {
-    background: linear-gradient(135deg, #FEF2F2 0%, #FEE2E2 100%) !important;
-    border-left: 4px solid #EF4444 !important;
-}
-
-/* ============================================
-   SIDEBAR
-   ============================================ */
-
-section[data-testid="stSidebar"] {
-    background: #FAFBFC !important;
-    border-right: 1px solid #E8ECF4 !important;
-}
-
-section[data-testid="stSidebar"] * {
-    color: #1a1a1a !important;
-}
-
-section[data-testid="stSidebar"] hr {
-    border-color: #E8ECF4 !important;
-}
-
-section[data-testid="stSidebar"] .stButton > button {
-    background: #FFFFFF !important;
-    color: #1a1a1a !important;
-    border: 2px solid #E8ECF4 !important;
-    box-shadow: none !important;
-}
-
-section[data-testid="stSidebar"] .stButton > button:hover {
-    background: #1a1a1a !important;
-    color: #FFFFFF !important;
-    border-color: #1a1a1a !important;
-}
-
-/* ============================================
-   METRICS
-   ============================================ */
-
-div[data-testid="stMetric"] {
-    background: linear-gradient(135deg, #FFF546 0%, #FFED4A 100%) !important;
-    padding: 20px 24px !important;
-    border-radius: 16px !important;
-    border: none !important;
-    box-shadow: 0 4px 12px rgba(255, 245, 70, 0.3) !important;
-}
-
-div[data-testid="stMetricValue"] {
-    font-size: 2.2rem !important;
-    font-weight: 700 !important;
-    color: #1a1a1a !important;
-    font-family: 'Space Mono', monospace !important;
-}
-
-div[data-testid="stMetricLabel"] {
-    color: #666600 !important;
-    font-weight: 600 !important;
-    text-transform: uppercase !important;
-    font-size: 11px !important;
-    letter-spacing: 0.8px !important;
-}
-
-/* ============================================
-   FEATURE CARDS
-   ============================================ */
-
-.feature-card {
-    background: #FFFFFF;
-    border-radius: 20px;
-    padding: 28px;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
-    border: 1px solid #E8ECF4;
-    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-    height: 100%;
-}
-
-.feature-card:hover {
-    transform: translateY(-6px);
-    box-shadow: 0 12px 32px rgba(0, 0, 0, 0.12);
-    border-color: #FFF546;
-}
-
-.feature-icon {
-    font-size: 2.8rem;
-    margin-bottom: 16px;
-    display: block;
-}
-
-.feature-title {
-    font-size: 1.1rem !important;
-    font-weight: 700 !important;
-    color: #1a1a1a !important;
-    margin-bottom: 10px !important;
-    letter-spacing: -0.3px !important;
-}
-
-.feature-desc {
-    color: #6B7280 !important;
-    font-size: 14px !important;
+.stTextArea textarea,
+.stTextInput input {
+    border-radius: 20px !important;
+    border: 1px solid rgba(210, 197, 180, 0.95) !important;
+    background: rgba(255, 253, 249, 0.92) !important;
+    color: var(--ink) !important;
+    font-size: 1rem !important;
     line-height: 1.6 !important;
+    padding: 18px 18px 16px !important;
 }
 
-/* ============================================
-   INFO BANNER
-   ============================================ */
-
-.info-banner {
-    background: linear-gradient(135deg, #FFF546 0%, #FFED4A 100%);
-    border: none;
-    border-radius: 20px;
-    padding: 28px 36px;
-    margin: 36px 0;
-    box-shadow: 0 4px 16px rgba(255, 245, 70, 0.3);
+.stTextArea textarea::placeholder,
+.stTextInput input::placeholder {
+    color: #7a7269 !important;
+    opacity: 1 !important;
 }
 
-.info-banner-title {
-    font-size: 1.15rem !important;
+.stTextArea [data-baseweb="textarea"],
+.stTextInput [data-baseweb="input"] {
+    background: rgba(255, 253, 249, 0.92) !important;
+    border-radius: 20px !important;
+}
+
+.stTextArea textarea:focus,
+.stTextInput input:focus {
+    border-color: rgba(29, 78, 216, 0.9) !important;
+    box-shadow: 0 0 0 4px rgba(29, 78, 216, 0.14) !important;
+}
+
+.stButton > button,
+.stDownloadButton > button {
+    min-height: 46px;
+    border-radius: 999px !important;
+    border: 1px solid rgba(21, 62, 175, 0.14) !important;
+    background: linear-gradient(135deg, var(--accent), var(--accent-deep)) !important;
+    color: #ffffff !important;
     font-weight: 700 !important;
-    color: #1a1a1a !important;
-    margin-bottom: 12px !important;
+    letter-spacing: 0.01em;
+    box-shadow: 0 14px 28px rgba(29, 78, 216, 0.2);
+    transition: transform 0.18s ease, box-shadow 0.18s ease;
 }
 
-.info-banner-text {
-    color: #4a4a00 !important;
-    line-height: 1.8 !important;
-    font-size: 15px !important;
+.stButton > button:hover,
+.stDownloadButton > button:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 18px 28px rgba(29, 78, 216, 0.26);
+    filter: brightness(1.04);
 }
 
-.info-banner-text strong {
-    color: #1a1a1a !important;
-    font-weight: 600 !important;
+.stButton > button p,
+.stButton > button span,
+.stButton > button div,
+.stDownloadButton > button p,
+.stDownloadButton > button span,
+.stDownloadButton > button div {
+    color: #ffffff !important;
 }
 
-/* ============================================
-   TOKEN HEATMAP
-   ============================================ */
+.stSelectbox [data-baseweb="select"] > div,
+.stSelectbox [data-baseweb="select"] > div > div {
+    background: rgba(255, 253, 249, 0.96) !important;
+    color: var(--ink) !important;
+    border-color: rgba(210, 197, 180, 0.95) !important;
+    border-radius: 18px !important;
+}
+
+.stSelectbox [data-baseweb="select"] svg {
+    fill: var(--ink) !important;
+}
+
+[data-baseweb="popover"] {
+    background: transparent !important;
+}
+
+[data-baseweb="menu"] {
+    background: #fffdfa !important;
+    border: 1px solid rgba(210, 197, 180, 0.95) !important;
+    border-radius: 18px !important;
+    box-shadow: 0 18px 36px rgba(55, 42, 29, 0.14) !important;
+}
+
+[data-baseweb="menu"] ul,
+[data-baseweb="menu"] li {
+    background: #fffdfa !important;
+}
+
+[role="option"] {
+    background: #fffdfa !important;
+    color: var(--ink) !important;
+}
+
+[role="option"]:hover,
+[role="option"][aria-selected="true"] {
+    background: #eef4ff !important;
+    color: var(--ink) !important;
+}
+
+.stTextArea textarea,
+.stTextInput input,
+.stSelectbox input {
+    caret-color: var(--ink) !important;
+}
+
+.summary-card,
+.content-card,
+.decision-panel {
+    border-radius: 22px;
+    border: 1px solid rgba(221, 208, 191, 0.92);
+    background: rgba(255, 253, 248, 0.92);
+    box-shadow: var(--card-shadow);
+}
+
+.summary-card {
+    min-height: 142px;
+    padding: 18px 18px 16px;
+}
+
+.summary-card.safe {
+    background: linear-gradient(180deg, rgba(239, 249, 246, 0.98), rgba(255, 253, 248, 0.96));
+}
+
+.summary-card.danger {
+    background: linear-gradient(180deg, rgba(253, 243, 241, 0.96), rgba(255, 253, 248, 0.96));
+}
+
+.summary-label {
+    margin-bottom: 10px;
+    color: var(--muted);
+    font-size: 0.82rem;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+}
+
+.summary-value {
+    font-family: Georgia, "Palatino Linotype", serif;
+    font-size: 1.7rem;
+    line-height: 1.15;
+}
+
+.summary-helper {
+    margin-top: 8px;
+    color: var(--muted);
+    line-height: 1.5;
+}
+
+.decision-panel {
+    padding: 24px;
+    min-height: 280px;
+}
+
+.decision-panel.safe {
+    background: linear-gradient(160deg, rgba(236, 248, 245, 0.98), rgba(255, 253, 248, 0.95));
+}
+
+.decision-panel.danger {
+    background: linear-gradient(160deg, rgba(253, 237, 234, 0.98), rgba(255, 253, 248, 0.95));
+}
+
+.decision-label {
+    color: var(--muted);
+    font-size: 0.82rem;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+}
+
+.decision-value {
+    margin: 14px 0 10px;
+    font-family: Georgia, "Palatino Linotype", serif;
+    font-size: 2.5rem;
+}
+
+.decision-subtext {
+    margin-top: 10px;
+    font-size: 1rem;
+    line-height: 1.6;
+}
+
+.content-card {
+    padding: 20px 22px;
+    margin-bottom: 18px;
+}
+
+.content-card p {
+    margin: 0;
+    color: var(--muted);
+    line-height: 1.7;
+}
 
 .token-heatmap {
-    padding: 28px;
-    background: #FAFBFC;
-    border-radius: 16px;
-    margin: 20px 0;
-    line-height: 2.4;
-    border: 1px solid #E8ECF4;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 8px;
 }
 
 .token {
-    display: inline-block;
-    margin: 4px;
-    padding: 8px 14px;
-    border-radius: 8px;
-    font-weight: 600;
-    font-size: 14px;
-    transition: all 0.2s ease;
-    color: #1a1a1a !important;
-    font-family: 'Space Mono', monospace !important;
-    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.06);
+    display: inline-flex;
+    align-items: center;
+    padding: 7px 11px;
+    border-radius: 999px;
+    border: 1px solid transparent;
+    line-height: 1.1;
+    font-size: 0.95rem;
 }
 
-.token:hover {
-    transform: scale(1.12);
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+.rewrite-text {
+    margin-bottom: 12px;
+    font-family: Georgia, "Palatino Linotype", serif;
+    font-size: 1.25rem;
+    line-height: 1.6;
+    color: var(--ink);
 }
 
-/* ============================================
-   FILE UPLOADER
-   ============================================ */
-
-.stFileUploader {
-    border: 2px dashed #D1D5DB !important;
-    border-radius: 16px !important;
-    padding: 40px !important;
-    background: #FAFBFC !important;
-    transition: all 0.2s ease !important;
+.rewrite-metrics {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin-top: 14px;
+    color: var(--muted);
+    font-size: 0.92rem;
 }
 
-.stFileUploader:hover {
-    border-color: #1a1a1a !important;
-    background: #FFFFFF !important;
+.mini-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 14px 18px;
+    margin-bottom: 10px;
+    border-radius: 18px;
+    background: rgba(255, 252, 247, 0.92);
+    border: 1px solid rgba(221, 208, 191, 0.9);
 }
 
-/* ============================================
-   EXPANDER
-   ============================================ */
-
-.streamlit-expanderHeader {
-    background: #FAFBFC !important;
-    border-radius: 14px !important;
-    font-weight: 600 !important;
-    padding: 16px 20px !important;
-    border: 1px solid #E8ECF4 !important;
-    transition: all 0.2s ease !important;
+.pill {
+    display: inline-flex;
+    align-items: center;
+    padding: 6px 12px;
+    border-radius: 999px;
+    background: var(--accent-soft);
+    color: var(--accent);
+    font-weight: 700;
 }
 
-.streamlit-expanderHeader:hover {
-    background: #FFFFFF !important;
-    border-color: #1a1a1a !important;
+div[data-baseweb="notification"] {
+    border-radius: 18px !important;
+    border: 1px solid rgba(221, 208, 191, 0.92) !important;
 }
 
-/* ============================================
-   DATAFRAMES
-   ============================================ */
-
-.dataframe {
-    border: 1px solid #E8ECF4 !important;
-    border-radius: 14px !important;
-    overflow: hidden !important;
-}
-
-.dataframe thead tr th {
-    background: #FAFBFC !important;
-    color: #1a1a1a !important;
-    font-weight: 700 !important;
-    padding: 14px 16px !important;
-    border-bottom: 2px solid #E8ECF4 !important;
-    text-transform: uppercase !important;
-    font-size: 12px !important;
-    letter-spacing: 0.5px !important;
-}
-
-.dataframe tbody tr:hover {
-    background-color: #FAFBFC !important;
-}
-
-.dataframe tbody tr td {
-    padding: 12px 16px !important;
-    border-bottom: 1px solid #F3F4F6 !important;
-}
-
-/* ============================================
-   SLIDER
-   ============================================ */
-
-.stSlider {
-    padding: 12px 0;
-}
-
-.stSlider > div > div > div > div {
-    background: #1a1a1a !important;
-    height: 6px !important;
-    border-radius: 3px !important;
-}
-
-.stSlider [role="slider"] {
-    background: #FFF546 !important;
-    border: 3px solid #1a1a1a !important;
-    width: 22px !important;
-    height: 22px !important;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2) !important;
-}
-
-.stSlider [role="slider"]:hover {
-    transform: scale(1.1);
-}
-
-/* ============================================
-   PROGRESS BAR
-   ============================================ */
-
-.stProgress > div > div > div {
-    background: linear-gradient(90deg, #1a1a1a 0%, #333333 100%) !important;
-    border-radius: 8px !important;
-}
-
-/* ============================================
-   SPINNER
-   ============================================ */
-
-.stSpinner > div {
-    border-top-color: #1a1a1a !important;
-    border-right-color: #FFF546 !important;
-}
-
-/* ============================================
-   CAPTION
-   ============================================ */
-
-.stCaption, small {
-    color: #9CA3AF !important;
-    font-size: 13px !important;
-}
-
-/* ============================================
-   DIVIDERS
-   ============================================ */
-
-hr {
-    border: none;
-    height: 1px;
-    background: #E8ECF4;
-    margin: 32px 0;
-}
-
-/* ============================================
-   SCROLLBAR
-   ============================================ */
-
-::-webkit-scrollbar {
-    width: 10px;
-    height: 10px;
-}
-
-::-webkit-scrollbar-track {
-    background: #F6F8FB;
-    border-radius: 8px;
-}
-
-::-webkit-scrollbar-thumb {
-    background: #D1D5DB;
-    border-radius: 8px;
-}
-
-::-webkit-scrollbar-thumb:hover {
-    background: #9CA3AF;
-}
-
-/* ============================================
-   HIDE STREAMLIT ELEMENTS
-   ============================================ */
-
-#MainMenu {visibility: hidden;}
-footer {visibility: hidden;}
-header {visibility: hidden;}
-
-/* ============================================
-   RESPONSIVE DESIGN
-   ============================================ */
-
-@media (max-width: 800px) {
+@media (max-width: 960px) {
     .block-container {
-        padding: 24px 20px;
-        margin: 16px;
-        border-radius: 16px;
+        padding: 22px 16px 40px;
     }
 
-    h1 {
-        font-size: 2rem !important;
+    .hero-shell {
+        grid-template-columns: 1fr;
+        padding: 22px;
     }
 
-    .feature-card {
-        padding: 20px;
-        margin: 8px 0;
+    .hero-copy h1 {
+        font-size: 2.3rem !important;
     }
 
-    .info-banner {
-        padding: 20px 24px;
+    .mini-row {
+        align-items: flex-start;
+        flex-direction: column;
     }
-}
-
-/* ============================================
-   ENSURE VISIBILITY
-   ============================================ */
-
-/* Text visibility - exclude buttons and their children */
-.stMarkdown, .stText, .stCaption {
-    color: #1a1a1a !important;
-}
-
-/* Explicitly set button text colors */
-.stButton button,
-.stButton button * {
-    color: #FFFFFF !important;
-}
-
-.stButton button:hover,
-.stButton button:hover * {
-    color: #1a1a1a !important;
-}
-
-.stDownloadButton button,
-.stDownloadButton button * {
-    color: #FFFFFF !important;
-}
-
-label {
-    color: #1a1a1a !important;
-    font-weight: 600 !important;
-    font-size: 14px !important;
-    margin-bottom: 6px !important;
-}
-
-/* Plotly charts */
-.js-plotly-plot {
-    border-radius: 14px;
-    overflow: hidden;
 }

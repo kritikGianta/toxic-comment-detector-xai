@@ -1,641 +1,494 @@
-import streamlit as st
-import torch
-import pandas as pd
-import plotly.graph_objects as go
-from transformers import AutoTokenizer, AutoModelForSequenceClassification
-from captum.attr import IntegratedGradients
 import os
 
-from config import *
-from utils import *
+import pandas as pd
+import plotly.graph_objects as go
+import streamlit as st
+import torch
+from captum.attr import IntegratedGradients
+from transformers import AutoModelForSequenceClassification, AutoTokenizer
 
-# Page config
-st.set_page_config(
-    page_title="Toxic Comment Detector + XAI",
-    page_icon="🧠",
-    layout="wide",
-    initial_sidebar_state="expanded"
+from config import DEFAULT_THRESHOLD, DEVICE, EXAMPLE_TEXTS, MODEL_PATH
+from utils import (
+    batch_score_toxicity,
+    bias_analysis,
+    counterfactual_analysis,
+    explain_text,
+    explain_why_toxic,
+    get_severity,
+    get_toxicity_category,
+    normalize_text,
+    predict,
+    rewrite_text,
 )
 
-# Load custom CSS
+st.set_page_config(
+    page_title="Comment Safety Review",
+    page_icon="C",
+    layout="wide",
+    initial_sidebar_state="expanded",
+)
+
+
 def load_css():
     css_path = os.path.join(os.path.dirname(__file__), "styles.css")
     if os.path.exists(css_path):
-        with open(css_path) as f:
-            st.markdown(f"<style>{f.read()}</style>", unsafe_allow_html=True)
+        with open(css_path, encoding="utf-8") as css_file:
+            st.markdown(f"<style>{css_file.read()}</style>", unsafe_allow_html=True)
+
 
 load_css()
 
-# Initialize session state
 if "analysis_history" not in st.session_state:
     st.session_state.analysis_history = []
-
-if "current_text" not in st.session_state:
-    st.session_state.current_text = ""
+if "selected_example" not in st.session_state:
+    st.session_state.selected_example = "Custom"
+if "main_text_input" not in st.session_state:
+    st.session_state.main_text_input = ""
 
 
 @st.cache_resource
 def load_model():
-    """Load model and tokenizer with error handling"""
     if not os.path.exists(MODEL_PATH):
-        st.error(f"Model not found at {MODEL_PATH}. Please train the model first using the notebook.")
+        st.error(f"Model not found at {MODEL_PATH}. Train or export the model first.")
         st.stop()
 
-    try:
-        tokenizer = AutoTokenizer.from_pretrained(MODEL_PATH, local_files_only=True)
-        model = AutoModelForSequenceClassification.from_pretrained(
-            MODEL_PATH,
-            local_files_only=True,
-            torch_dtype=torch.float32
-        )
-        model.eval()
-        model.to(DEVICE)
-        return tokenizer, model
-    except Exception as e:
-        st.error(f"Error loading model: {str(e)}")
-        st.stop()
+    tokenizer = AutoTokenizer.from_pretrained(MODEL_PATH, local_files_only=True)
+    model = AutoModelForSequenceClassification.from_pretrained(
+        MODEL_PATH,
+        local_files_only=True,
+        torch_dtype=torch.float32,
+    )
+    model.to(DEVICE)
+    model.eval()
+    return tokenizer, model
 
 
-try:
-    tokenizer, model = load_model()
+def forward_func(inputs_embeds, attention_mask):
+    outputs = model(inputs_embeds=inputs_embeds, attention_mask=attention_mask)
+    return outputs.logits.squeeze(-1)
 
-    # Setup Integrated Gradients
-    def forward_func(inputs_embeds, attention_mask):
-        outputs = model(inputs_embeds=inputs_embeds, attention_mask=attention_mask)
-        return outputs.logits.squeeze(-1)
 
-    ig = IntegratedGradients(forward_func)
-
-except Exception as e:
-    st.error(f"Failed to initialize model: {str(e)}")
-    st.stop()
+tokenizer, model = load_model()
+ig = IntegratedGradients(forward_func)
 
 
 def render_token_heatmap(tokens, scores):
-    """Render token attribution heatmap"""
-    html = '<div class="token-heatmap">'
-
-    for tok, score in zip(tokens, scores):
-        if tok in ["[CLS]", "[SEP]", "[PAD]"]:
+    html = ['<div class="token-heatmap">']
+    for token, score in zip(tokens, scores):
+        if token in {"[CLS]", "[SEP]", "[PAD]"}:
             continue
 
-        # Calculate color intensity
-        if score > 0:
-            intensity = min(abs(score), 1.0)
-            color = f"rgba(255, 50, 50, {intensity:.2f})"
-            tooltip = f"Increases toxicity: +{score:.3f}"
+        clean_token = token.replace("##", "")
+        strength = min(abs(float(score)), 1.0)
+        if score >= 0:
+            color = f"rgba(185, 28, 28, {0.14 + strength * 0.34:.2f})"
+            border = "rgba(185, 28, 28, 0.24)"
+            tip = f"Raises score by {score:.3f}"
         else:
-            intensity = min(abs(score), 1.0)
-            color = f"rgba(50, 200, 50, {intensity:.2f})"
-            tooltip = f"Decreases toxicity: {score:.3f}"
+            color = f"rgba(22, 101, 52, {0.12 + strength * 0.28:.2f})"
+            border = "rgba(22, 101, 52, 0.22)"
+            tip = f"Lowers score by {score:.3f}"
 
-        clean_tok = tok.replace("##", "")
-        html += f'<span class="token" style="background:{color};" title="{tooltip}">{clean_tok}</span>'
+        html.append(
+            f'<span class="token" style="background:{color}; border-color:{border};" title="{tip}">{clean_token}</span>'
+        )
+    html.append("</div>")
+    return "".join(html)
 
-    html += '</div>'
-    return html
 
-
-def render_confidence_gauge(prob, threshold):
-    """Create confidence gauge visualization"""
-    severity, color = get_severity(prob)
-
+def render_score_gauge(probability, threshold):
+    severity, color = get_severity(probability)
     fig = go.Figure(
         go.Indicator(
             mode="gauge+number",
-            value=prob * 100,
-            number={"suffix": "%", "font": {"size": 50}},
-            title={"text": f"Toxicity Score<br><span style='font-size:20px;color:{color}'>{severity}</span>",
-                   "font": {"size": 20}},
+            value=probability * 100,
+            number={"suffix": "%", "font": {"size": 42}},
+            title={"text": f"Risk score<br><span style='font-size:16px'>{severity}</span>"},
             gauge={
-                "axis": {"range": [0, 100], "tickwidth": 2},
-                "bar": {"color": color, "thickness": 0.75},
-                "bgcolor": "white",
-                "borderwidth": 2,
-                "bordercolor": "#e2e8f0",
+                "axis": {"range": [0, 100]},
+                "bar": {"color": color},
+                "bgcolor": "#f6efe5",
+                "borderwidth": 0,
                 "steps": [
-                    {"range": [0, 30], "color": "#c6f6d5"},
-                    {"range": [30, 50], "color": "#fef08a"},
-                    {"range": [50, 70], "color": "#fed7aa"},
-                    {"range": [70, 85], "color": "#fecaca"},
-                    {"range": [85, 100], "color": "#fca5a5"},
+                    {"range": [0, 30], "color": "#dbead8"},
+                    {"range": [30, 50], "color": "#efe6b8"},
+                    {"range": [50, 70], "color": "#f6d3ad"},
+                    {"range": [70, 100], "color": "#f2c3c1"},
                 ],
                 "threshold": {
-                    "line": {"color": "black", "width": 3},
-                    "thickness": 0.8,
+                    "line": {"color": "#2e2a26", "width": 3},
+                    "thickness": 0.7,
                     "value": threshold * 100,
                 },
             },
         )
     )
-
     fig.update_layout(
-        height=350,
-        margin=dict(t=50, b=20, l=20, r=20),
+        height=280,
+        margin=dict(t=50, b=10, l=10, r=10),
         paper_bgcolor="rgba(0,0,0,0)",
-        font={"family": "Arial, sans-serif"}
+        font={"family": "Aptos, Segoe UI, sans-serif", "color": "#2e2a26"},
     )
-
     return fig
 
 
-# SIDEBAR
-with st.sidebar:
-    st.markdown("## ⚙️ Settings")
+def render_summary_card(title, value, helper, tone_class="neutral"):
+    st.markdown(
+        f"""
+        <div class="summary-card {tone_class}">
+            <div class="summary-label">{title}</div>
+            <div class="summary-value">{value}</div>
+            <div class="summary-helper">{helper}</div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
 
+
+def get_recommendation(probability, threshold):
+    if probability >= max(threshold + 0.15, 0.8):
+        return "Block or rewrite before posting"
+    if probability >= threshold:
+        return "Needs review before posting"
+    if probability >= threshold * 0.7:
+        return "Borderline tone, worth a second look"
+    return "Safe to post as written"
+
+
+def detect_comment_column(dataframe):
+    candidates = ["comment_text", "text", "comment", "message", "content"]
+    lower_map = {column.lower(): column for column in dataframe.columns}
+    for candidate in candidates:
+        if candidate in lower_map:
+            return lower_map[candidate]
+    for column in dataframe.columns:
+        if dataframe[column].dtype == object:
+            return column
+    return None
+
+
+def analyze_single_text(text, threshold):
+    probability, label = predict(text, model, tokenizer, threshold)
+    tokens, scores = explain_text(text, model, tokenizer, ig)
+    explanation = explain_why_toxic(text, tokens, scores, threshold, probability)
+    categories = get_toxicity_category(text.lower(), tokens, scores)
+    rewrite, old_score, new_score, rationale = rewrite_text(text, model, tokenizer, tokens, scores)
+    counterfactuals = counterfactual_analysis(text, tokens, scores, model, tokenizer)
+    return {
+        "probability": probability,
+        "label": label,
+        "tokens": tokens,
+        "scores": scores,
+        "explanation": explanation,
+        "categories": categories,
+        "rewrite": rewrite,
+        "old_score": old_score,
+        "new_score": new_score,
+        "rewrite_rationale": rationale,
+        "counterfactuals": counterfactuals,
+    }
+
+
+with st.sidebar:
+    st.markdown("### Review settings")
     threshold = st.slider(
-        "Decision Threshold",
-        min_value=0.1,
-        max_value=0.9,
+        "Decision threshold",
+        min_value=0.10,
+        max_value=0.90,
         value=DEFAULT_THRESHOLD,
         step=0.01,
-        help="Scores above this threshold are classified as toxic"
+        help="Scores above this line are treated as toxic.",
     )
+    st.caption("Use a lower threshold for stricter moderation and a higher one for fewer false alarms.")
 
-    st.markdown("---")
+    st.markdown('<div class="sidebar-section">', unsafe_allow_html=True)
+    st.markdown("### Session")
+    total_checks = len(st.session_state.analysis_history)
+    toxic_checks = sum(1 for item in st.session_state.analysis_history if item["label"] == "Toxic")
+    st.metric("Comments reviewed", total_checks)
+    st.metric("Flagged", toxic_checks)
+    if st.button("Clear session history", use_container_width=True):
+        st.session_state.analysis_history = []
+        st.rerun()
+    st.markdown("</div>", unsafe_allow_html=True)
 
-    st.markdown("## 📖 About")
-    st.markdown("""
-    This tool uses **DistilBERT** with **Explainable AI** to:
-    - Detect toxic comments
-    - Explain why they're toxic
-    - Suggest improvements
-    - Analyze bias
-
-    Built with PyTorch, Transformers, and Captum.
-    """)
-
-    st.markdown("---")
-
-    st.markdown("## 📊 Quick Stats")
-    if st.session_state.analysis_history:
-        total = len(st.session_state.analysis_history)
-        toxic_count = sum(1 for h in st.session_state.analysis_history if h["label"] == "Toxic")
-        st.metric("Analyzed", total)
-        st.metric("Toxic", toxic_count)
-        st.metric("Non-toxic", total - toxic_count)
-
-        if st.button("Clear History"):
-            st.session_state.analysis_history = []
-            st.rerun()
-
-# HEADER
-st.markdown("""
-<div style='text-align: center; padding: 60px 40px; background: #FFF546;
-border-radius: 24px; margin-bottom: 40px; border: 2px solid #66640F;
-box-shadow: 0 8px 32px rgba(0, 0, 0, 0.08);'>
-    <h1 style='color: #000000; margin: 0; font-size: 4rem; font-family: "Source Serif Pro", serif;
-    font-weight: 700; letter-spacing: -2px;'>
-        🧠 Toxic Comment Detector
-    </h1>
-    <p style='font-size: 22px; margin: 20px 0 12px 0; color: #66640F; font-weight: 600;
-    font-family: "Inter", sans-serif; letter-spacing: -0.5px;'>
-        AI-Powered Analysis with Explainable Insights
-    </p>
-    <p style='font-size: 15px; margin: 0; color: #000000; font-family: "Space Mono", monospace;'>
-        DistilBERT • ROC-AUC: 0.986 • F1: 0.84
-    </p>
-</div>
-""", unsafe_allow_html=True)
-
-# FEATURES SHOWCASE
-st.markdown("<h2 style='text-align: center; margin: 40px 0 32px 0;'>✨ Key Features</h2>", unsafe_allow_html=True)
-
-feat_col1, feat_col2, feat_col3, feat_col4 = st.columns(4)
-
-with feat_col1:
-    st.markdown("""
-    <div class='feature-card'>
-        <div class='feature-icon'>🎯</div>
-        <div class='feature-title'>Smart Detection</div>
-        <div class='feature-desc'>
-            Advanced AI model with 98.6% accuracy classifies comments into toxic/non-toxic with confidence scores
-        </div>
-    </div>
-    """, unsafe_allow_html=True)
-
-with feat_col2:
-    st.markdown("""
-    <div class='feature-card'>
-        <div class='feature-icon'>🔍</div>
-        <div class='feature-title'>Explainable AI</div>
-        <div class='feature-desc'>
-            Visual heatmaps show which words contribute to toxicity using Integrated Gradients
-        </div>
-    </div>
-    """, unsafe_allow_html=True)
-
-with feat_col3:
-    st.markdown("""
-    <div class='feature-card'>
-        <div class='feature-icon'>✍️</div>
-        <div class='feature-title'>Rewrite Assistant</div>
-        <div class='feature-desc'>
-            Get intelligent suggestions to rephrase toxic comments into respectful alternatives
-        </div>
-    </div>
-    """, unsafe_allow_html=True)
-
-with feat_col4:
-    st.markdown("""
-    <div class='feature-card'>
-        <div class='feature-icon'>⚖️</div>
-        <div class='feature-title'>Bias Analysis</div>
-        <div class='feature-desc'>
-            Test model fairness across different demographics and identity groups
-        </div>
-    </div>
-    """, unsafe_allow_html=True)
-
-# INFO BANNER
-st.markdown("""
-<div class='info-banner'>
-    <div class='info-banner-title'>📌 How It Works</div>
-    <div class='info-banner-text'>
-        <strong>1. Detection:</strong> AI analyzes text and assigns toxicity score (0-100%) •
-        <strong>2. Explanation:</strong> Visual heatmap highlights problematic words •
-        <strong>3. Insights:</strong> See why content is toxic with natural language explanations •
-        <strong>4. Improvement:</strong> Get suggestions to make comments more respectful
-    </div>
-</div>
-""", unsafe_allow_html=True)
-
-st.markdown("---")
-
-
-# MAIN TABS
-tab1, tab2, tab3, tab4 = st.tabs(["📝 Single Analysis", "📊 Batch Analysis", "⚖️ Bias Analysis", "📚 History"])
-
-# TAB 1: Single Analysis
-with tab1:
-    text_input = st.text_area(
-        "Enter comment to analyze:",
-        value=st.session_state.current_text,
-        height=150,
-        placeholder="Type or paste a comment here...",
-        key="main_text_input"
+    st.markdown('<div class="sidebar-section">', unsafe_allow_html=True)
+    st.markdown("### Notes")
+    st.markdown(
+        "- Uses the trained local model already in this project\n"
+        "- Runs fully offline from the exported model folder\n"
+        "- Focuses on moderation workflow instead of AI branding"
     )
+    st.markdown("</div>", unsafe_allow_html=True)
 
-    # Character count
-    if text_input:
-        st.caption(f"📏 {len(text_input)} characters, {len(text_input.split())} words")
 
-    if st.button("🔍 Analyze", type="primary", use_container_width=True):
-        if not text_input or not text_input.strip():
-            st.warning("⚠️ Please enter some text to analyze")
+st.markdown(
+    """
+    <section class="hero-shell">
+        <div class="hero-copy">
+            <div class="eyebrow">Comment Safety Review</div>
+            <h1>Review language the way a moderator would.</h1>
+            <p>
+                Check whether a comment crosses the line, see which words drive the score,
+                and get a calmer rewrite when the tone is too sharp.
+            </p>
+        </div>
+        <div class="hero-panel">
+            <div class="hero-panel-label">What this app is best for</div>
+            <ul>
+                <li>Single-comment review before posting</li>
+                <li>CSV screening for moderation queues</li>
+                <li>Quick fairness checks on neutral identity statements</li>
+            </ul>
+        </div>
+    </section>
+    """,
+    unsafe_allow_html=True,
+)
+
+tabs = st.tabs(["Review comment", "Scan CSV", "Fairness check", "Recent checks"])
+
+with tabs[0]:
+    sample_names = ["Custom"] + list(EXAMPLE_TEXTS.keys())
+    selected_example = st.selectbox("Start from a sample or write your own", sample_names)
+    if selected_example != "Custom":
+        st.session_state.main_text_input = EXAMPLE_TEXTS[selected_example]
+
+    st.text_area(
+        "Comment",
+        key="main_text_input",
+        height=180,
+        placeholder="Paste a comment here to review tone, risk, and rewrite suggestions.",
+    )
+    current_text = normalize_text(st.session_state.main_text_input)
+
+    info_col, action_col = st.columns([3, 1])
+    with info_col:
+        st.caption(f"{len(current_text)} characters | {len(current_text.split()) if current_text else 0} words")
+    with action_col:
+        run_single = st.button("Review comment", type="primary", use_container_width=True)
+
+    if run_single:
+        if not current_text:
+            st.warning("Enter a comment before running a review.")
         else:
-            with st.spinner("Analyzing comment..."):
-                try:
-                    # Get prediction
-                    prob, label = predict(text_input, model, tokenizer, threshold)
+            with st.spinner("Reviewing comment..."):
+                result = analyze_single_text(current_text, threshold)
 
-                    # Get explanations
-                    tokens, scores = explain_text(text_input, model, tokenizer, ig)
+            st.session_state.analysis_history.append(
+                {
+                    "text": current_text,
+                    "prob": result["probability"],
+                    "label": result["label"],
+                    "timestamp": pd.Timestamp.now(),
+                }
+            )
 
-                    # Store in history
-                    st.session_state.analysis_history.append({
-                        "text": text_input,
-                        "prob": prob,
-                        "label": label,
-                        "timestamp": pd.Timestamp.now()
-                    })
+            severity, _ = get_severity(result["probability"])
+            recommendation = get_recommendation(result["probability"], threshold)
+            tone_class = "danger" if result["label"] == "Toxic" else "safe"
 
-                    # Display results in organized sections
-                    st.markdown("---")
-                    st.markdown("## 🎯 Analysis Results")
-
-                    # Main prediction section
-                    col1, col2 = st.columns([1, 1])
-
-                    with col1:
-                        st.plotly_chart(
-                            render_confidence_gauge(prob, threshold),
-                            use_container_width=True
-                        )
-
-                    with col2:
-                        st.markdown("### 🏷️ Classification")
-                        severity, color = get_severity(prob)
-
-                        st.markdown(f"""
-                        <div style='padding: 20px; background: {color}15; border-left: 4px solid {color}; border-radius: 10px; margin: 20px 0;'>
-                            <h2 style='color: {color}; margin: 0;'>{label}</h2>
-                            <p style='font-size: 24px; margin: 10px 0 0 0;'>Severity: <strong>{severity}</strong></p>
-                            <p style='font-size: 18px; margin: 5px 0 0 0;'>Confidence: <strong>{prob:.1%}</strong></p>
-                        </div>
-                        """, unsafe_allow_html=True)
-
-                        # Show categories
-                        categories = get_toxicity_category(text_input.lower(), tokens, scores)
-                        st.markdown("**Categories:**")
-                        for cat in categories:
-                            st.markdown(f"- {cat}")
-
-                    # Explanation section
-                    st.markdown("### 💭 Why is this toxic?")
-                    reasoning = explain_why_toxic(text_input, tokens, scores, threshold, prob)
-                    st.info(reasoning)
-
-                    # Token heatmap
-                    st.markdown("### 🔍 Word-Level Attribution")
-                    st.markdown("**Red** = increases toxicity | **Green** = decreases toxicity")
-                    heatmap_html = render_token_heatmap(tokens, scores)
-                    st.markdown(heatmap_html, unsafe_allow_html=True)
-
-                    # Counterfactual analysis
-                    st.markdown("### 🧪 Counterfactual Analysis")
-                    st.markdown("What if we removed key words?")
-
-                    cf_results = counterfactual_analysis(text_input, tokens, scores, model, tokenizer)
-
-                    if not cf_results:
-                        st.info("No significant single-word removals found.")
-                    else:
-                        for i, result in enumerate(cf_results, 1):
-                            col1, col2, col3 = st.columns([1, 1, 1])
-                            with col1:
-                                st.markdown(f"**#{i} Word:** `{result['word']}`")
-                            with col2:
-                                st.markdown(f"**Impact:** {result['impact']:.3f}")
-                            with col3:
-                                st.markdown(f"**New Score:** {result['new_prob']:.3f}")
-
-                    # Rewrite suggestions
-                    st.markdown("### ✍️ Suggested Rewrite")
-
-                    with st.spinner("Generating suggestions..."):
-                        rewrite, old_score, new_score = rewrite_text(text_input, model, tokenizer)
-
-                    if rewrite is None or rewrite == text_input:
-                        st.info("✅ No rewrite needed or no better alternative found.")
-                    else:
-                        improvement = ((old_score - new_score) / old_score) * 100
-
-                        st.success(f"**Suggested version:**\n\n{rewrite}")
-
-                        col1, col2, col3 = st.columns(3)
-                        with col1:
-                            st.metric("Original", f"{old_score:.3f}")
-                        with col2:
-                            st.metric("Improved", f"{new_score:.3f}")
-                        with col3:
-                            st.metric("Improvement", f"{improvement:.1f}%")
-
-                        # Show side-by-side comparison
-                        with st.expander("📋 View Comparison"):
-                            comp_col1, comp_col2 = st.columns(2)
-                            with comp_col1:
-                                st.markdown("**Original:**")
-                                st.code(text_input)
-                            with comp_col2:
-                                st.markdown("**Rewritten:**")
-                                st.code(rewrite)
-
-                except Exception as e:
-                    st.error(f"❌ Error during analysis: {str(e)}")
-
-# TAB 2: Batch Analysis
-with tab2:
-    st.markdown("## 📊 Batch Analysis")
-    st.markdown("Upload a CSV file with a column named `comment_text` to analyze multiple comments at once.")
-
-    uploaded_file = st.file_uploader(
-        "Choose a CSV file",
-        type="csv",
-        help="CSV should have a 'comment_text' column"
-    )
-
-    if uploaded_file is not None:
-        try:
-            df = pd.read_csv(uploaded_file)
-
-            if "comment_text" not in df.columns:
-                st.error("❌ CSV must contain a 'comment_text' column")
-            else:
-                st.success(f"✅ Loaded {len(df)} comments")
-
-                if st.button("🚀 Analyze All", type="primary"):
-                    progress_bar = st.progress(0)
-                    status_text = st.empty()
-
-                    results = []
-
-                    for idx, row in df.iterrows():
-                        status_text.text(f"Analyzing comment {idx + 1}/{len(df)}...")
-                        progress_bar.progress((idx + 1) / len(df))
-
-                        text = row["comment_text"]
-
-                        if pd.isna(text) or not str(text).strip():
-                            results.append({
-                                "comment_text": text,
-                                "toxicity_score": 0.0,
-                                "label": "Empty",
-                                "severity": "N/A"
-                            })
-                            continue
-
-                        prob, label = predict(str(text), model, tokenizer, threshold)
-                        severity, _ = get_severity(prob)
-
-                        results.append({
-                            "comment_text": text,
-                            "toxicity_score": round(prob, 4),
-                            "label": label,
-                            "severity": severity
-                        })
-
-                    progress_bar.empty()
-                    status_text.empty()
-
-                    results_df = pd.DataFrame(results)
-
-                    st.markdown("### 📈 Results")
-
-                    # Summary stats
-                    col1, col2, col3, col4 = st.columns(4)
-                    with col1:
-                        st.metric("Total", len(results_df))
-                    with col2:
-                        toxic_count = len(results_df[results_df["label"] == "Toxic"])
-                        st.metric("Toxic", toxic_count)
-                    with col3:
-                        safe_count = len(results_df[results_df["label"] == "Non-toxic"])
-                        st.metric("Non-toxic", safe_count)
-                    with col4:
-                        avg_score = results_df["toxicity_score"].mean()
-                        st.metric("Avg Score", f"{avg_score:.3f}")
-
-                    # Show results table
-                    st.dataframe(results_df, use_container_width=True, height=400)
-
-                    # Download button
-                    csv = results_df.to_csv(index=False).encode('utf-8')
-                    st.download_button(
-                        label="📥 Download Results",
-                        data=csv,
-                        file_name="toxicity_analysis_results.csv",
-                        mime="text/csv",
-                        use_container_width=True
-                    )
-
-                    # Distribution chart
-                    st.markdown("### 📊 Score Distribution")
-
-                    fig = go.Figure()
-                    fig.add_trace(go.Histogram(
-                        x=results_df["toxicity_score"],
-                        nbinsx=20,
-                        marker_color="#667eea",
-                        opacity=0.75
-                    ))
-
-                    fig.update_layout(
-                        title="Toxicity Score Distribution",
-                        xaxis_title="Toxicity Score",
-                        yaxis_title="Count",
-                        showlegend=False,
-                        height=400
-                    )
-
-                    st.plotly_chart(fig, use_container_width=True)
-
-        except Exception as e:
-            st.error(f"❌ Error processing file: {str(e)}")
-
-# TAB 3: Bias Analysis
-with tab3:
-    st.markdown("## ⚖️ Bias & Fairness Analysis")
-    st.markdown("""
-    This test evaluates whether the model assigns different toxicity scores to neutral statements
-    about different identity groups. Large variations may indicate bias.
-    """)
-
-    if st.button("🧪 Run Bias Analysis", type="primary"):
-        with st.spinner("Running fairness evaluation..."):
-            try:
-                results = bias_analysis(model, tokenizer)
-                df = pd.DataFrame(results)
-
-                st.markdown("### 📊 Results")
-
-                # Summary by category
-                summary = df.groupby("Category")["Toxicity"].agg(["mean", "std", "min", "max"]).reset_index()
-                summary.columns = ["Category", "Mean", "Std Dev", "Min", "Max"]
-
-                st.dataframe(summary, use_container_width=True)
-
-                # Full results
-                with st.expander("📋 View All Results"):
-                    st.dataframe(df, use_container_width=True, height=400)
-
-                # Highlight high scores
-                high_scores = df[df["Toxicity"] > threshold]
-                if not high_scores.empty:
-                    st.warning(f"⚠️ {len(high_scores)} neutral statements scored above threshold:")
-                    st.dataframe(high_scores, use_container_width=True)
-                else:
-                    st.success("✅ All neutral statements scored below threshold")
-
-                # Download option
-                csv = df.to_csv(index=False).encode('utf-8')
-                st.download_button(
-                    label="📥 Download Bias Analysis",
-                    data=csv,
-                    file_name="bias_analysis_results.csv",
-                    mime="text/csv"
+            top_left, top_right = st.columns([1.2, 1])
+            with top_left:
+                st.plotly_chart(render_score_gauge(result["probability"], threshold), use_container_width=True)
+            with top_right:
+                st.markdown(
+                    f"""
+                    <div class="decision-panel {tone_class}">
+                        <div class="decision-label">Decision</div>
+                        <div class="decision-value">{result["label"]}</div>
+                        <div class="decision-subtext">Severity: {severity}</div>
+                        <div class="decision-subtext">Recommendation: {recommendation}</div>
+                    </div>
+                    """,
+                    unsafe_allow_html=True,
                 )
 
-            except Exception as e:
-                st.error(f"❌ Error during bias analysis: {str(e)}")
+            card_one, card_two, card_three = st.columns(3)
+            with card_one:
+                render_summary_card("Risk score", f"{result['probability']:.1%}", "Model confidence", tone_class)
+            with card_two:
+                render_summary_card("Threshold", f"{threshold:.0%}", "Current moderation line")
+            with card_three:
+                render_summary_card("Categories", ", ".join(result["categories"]), "Detected language pattern")
 
-# TAB 4: History
-with tab4:
-    st.markdown("## 📚 Analysis History")
+            insight_col, rewrite_col = st.columns(2)
+            with insight_col:
+                st.markdown("### Why it was flagged")
+                st.markdown(
+                    f"""
+                    <div class="content-card">
+                        <p>{result["explanation"]}</p>
+                    </div>
+                    """,
+                    unsafe_allow_html=True,
+                )
 
+                st.markdown("### Word-level impact")
+                st.caption("Warmer red tokens push the score up. Green tokens pull it down.")
+                st.markdown(render_token_heatmap(result["tokens"], result["scores"]), unsafe_allow_html=True)
+
+            with rewrite_col:
+                st.markdown("### Suggested rewrite")
+                if result["rewrite"]:
+                    score_drop = result["old_score"] - result["new_score"]
+                    st.markdown(
+                        f"""
+                        <div class="content-card">
+                            <div class="rewrite-text">{result["rewrite"]}</div>
+                            <p>{result["rewrite_rationale"]}</p>
+                            <div class="rewrite-metrics">
+                                <span>Original: {result["old_score"]:.3f}</span>
+                                <span>Rewritten: {result["new_score"]:.3f}</span>
+                                <span>Drop: {score_drop:.3f}</span>
+                            </div>
+                        </div>
+                        """,
+                        unsafe_allow_html=True,
+                    )
+                else:
+                    st.markdown(
+                        """
+                        <div class="content-card">
+                            <p>No stronger rewrite was found. The original wording is already close to the safe range or the model did not improve on simple edits.</p>
+                        </div>
+                        """,
+                        unsafe_allow_html=True,
+                    )
+
+                st.markdown("### Highest-impact removals")
+                if result["counterfactuals"]:
+                    for item in result["counterfactuals"]:
+                        st.markdown(
+                            f"""
+                            <div class="mini-row">
+                                <span class="pill">{item["word"]}</span>
+                                <span>Score change: {item["impact"]:.3f}</span>
+                                <span>New score: {item["new_prob"]:.3f}</span>
+                            </div>
+                            """,
+                            unsafe_allow_html=True,
+                        )
+                else:
+                    st.caption("No single token stood out enough to produce a meaningful drop on its own.")
+
+with tabs[1]:
+    st.markdown("### CSV screening")
+    st.caption("Upload a CSV. The app will try to find a text column automatically and score comments in batches.")
+
+    uploaded_file = st.file_uploader("Upload CSV", type="csv")
+    if uploaded_file is not None:
+        try:
+            dataframe = pd.read_csv(uploaded_file)
+            comment_column = detect_comment_column(dataframe)
+
+            if comment_column is None:
+                st.error("No text-like column was found. Add a column such as comment_text, comment, or text.")
+            else:
+                st.markdown(
+                    f"""
+                    <div class="content-card">
+                        <p><strong>Detected text column:</strong> {comment_column}</p>
+                        <p><strong>Rows loaded:</strong> {len(dataframe)}</p>
+                    </div>
+                    """,
+                    unsafe_allow_html=True,
+                )
+
+                if st.button("Run CSV screening", type="primary"):
+                    texts = [normalize_text(value) for value in dataframe[comment_column].tolist()]
+                    with st.spinner("Scoring comments in batches..."):
+                        scores = batch_score_toxicity(texts, model, tokenizer)
+
+                    labels = ["Toxic" if score >= threshold else "Non-toxic" for score in scores]
+                    severities = [get_severity(score)[0] for score in scores]
+                    results_df = dataframe.copy()
+                    results_df["toxicity_score"] = [round(score, 4) for score in scores]
+                    results_df["label"] = labels
+                    results_df["severity"] = severities
+
+                    total = len(results_df)
+                    toxic_total = sum(1 for label in labels if label == "Toxic")
+                    avg_score = sum(scores) / total if total else 0.0
+
+                    first, second, third = st.columns(3)
+                    with first:
+                        render_summary_card("Rows reviewed", str(total), "CSV rows scored")
+                    with second:
+                        render_summary_card("Flagged", str(toxic_total), "Above current threshold", "danger" if toxic_total else "neutral")
+                    with third:
+                        render_summary_card("Average score", f"{avg_score:.3f}", "Across the uploaded file")
+
+                    st.dataframe(results_df, use_container_width=True, height=420)
+
+                    histogram = go.Figure()
+                    histogram.add_trace(
+                        go.Histogram(
+                            x=results_df["toxicity_score"],
+                            nbinsx=20,
+                            marker_color="#6f7f6b",
+                            opacity=0.85,
+                        )
+                    )
+                    histogram.update_layout(
+                        height=320,
+                        margin=dict(t=20, b=20, l=20, r=20),
+                        paper_bgcolor="rgba(0,0,0,0)",
+                        plot_bgcolor="#fbf7f1",
+                        xaxis_title="Toxicity score",
+                        yaxis_title="Count",
+                        showlegend=False,
+                    )
+                    st.plotly_chart(histogram, use_container_width=True)
+
+                    csv_data = results_df.to_csv(index=False).encode("utf-8")
+                    st.download_button(
+                        "Download scored CSV",
+                        data=csv_data,
+                        file_name="comment_safety_results.csv",
+                        mime="text/csv",
+                        use_container_width=True,
+                    )
+
+        except Exception as exc:
+            st.error(f"Could not process the CSV: {exc}")
+
+with tabs[2]:
+    st.markdown("### Fairness check")
+    st.caption("This compares neutral identity statements and highlights large score swings.")
+
+    if st.button("Run fairness check", type="primary"):
+        with st.spinner("Scoring identity templates..."):
+            bias_results = pd.DataFrame(bias_analysis(model, tokenizer))
+
+        grouped = (
+            bias_results.groupby("Category")["Toxicity"]
+            .agg(["mean", "max", "min"])
+            .reset_index()
+            .round(4)
+        )
+        grouped["spread"] = (grouped["max"] - grouped["min"]).round(4)
+
+        st.dataframe(grouped, use_container_width=True, height=260)
+        st.dataframe(bias_results, use_container_width=True, height=360)
+
+with tabs[3]:
+    st.markdown("### Recent checks")
     if not st.session_state.analysis_history:
-        st.info("No analyses yet. Start by analyzing some comments in the Single Analysis tab!")
+        st.caption("No comments reviewed in this session yet.")
     else:
-        # Convert history to dataframe
         history_df = pd.DataFrame(st.session_state.analysis_history)
-
-        # Summary metrics
-        st.markdown("### 📈 Session Summary")
-        col1, col2, col3, col4 = st.columns(4)
-
-        with col1:
-            st.metric("Total Analyzed", len(history_df))
-        with col2:
-            toxic = len(history_df[history_df["label"] == "Toxic"])
-            st.metric("Toxic", toxic)
-        with col3:
-            safe = len(history_df[history_df["label"] == "Non-toxic"])
-            st.metric("Non-toxic", safe)
-        with col4:
-            avg = history_df["prob"].mean()
-            st.metric("Avg Score", f"{avg:.3f}")
-
-        # History table
-        st.markdown("### 📝 Recent Analyses")
-
-        display_df = history_df[["text", "prob", "label"]].copy()
-        display_df.columns = ["Comment", "Score", "Label"]
-        display_df["Score"] = display_df["Score"].round(3)
-
-        st.dataframe(display_df, use_container_width=True, height=400)
-
-        # Trend chart
-        if len(history_df) > 1:
-            st.markdown("### 📉 Toxicity Trend")
-
-            fig = go.Figure()
-            fig.add_trace(go.Scatter(
-                y=history_df["prob"],
-                mode='lines+markers',
-                name='Toxicity Score',
-                line=dict(color='#667eea', width=3),
-                marker=dict(size=8)
-            ))
-
-            fig.add_hline(
-                y=threshold,
-                line_dash="dash",
-                line_color="red",
-                annotation_text="Threshold"
-            )
-
-            fig.update_layout(
-                title="Toxicity Over Time",
-                xaxis_title="Analysis #",
-                yaxis_title="Toxicity Score",
-                height=400,
-                showlegend=False
-            )
-
-            st.plotly_chart(fig, use_container_width=True)
-
-        # Export options
-        col1, col2 = st.columns(2)
-        with col1:
-            csv = history_df.to_csv(index=False).encode('utf-8')
-            st.download_button(
-                label="📥 Download History (CSV)",
-                data=csv,
-                file_name="analysis_history.csv",
-                mime="text/csv",
-                use_container_width=True
-            )
-
-        with col2:
-            if st.button("🗑️ Clear History", use_container_width=True):
-                st.session_state.analysis_history = []
-                st.rerun()
-
-# FOOTER
-st.markdown("---")
-st.markdown("""
-<div style='text-align: center; color: #718096; padding: 20px;'>
-    <p>Built with DistilBERT, PyTorch, Transformers & Captum</p>
-    <p>🧠 Explainable AI for Responsible Content Moderation</p>
-</div>
-""", unsafe_allow_html=True)
+        history_df["timestamp"] = history_df["timestamp"].dt.strftime("%Y-%m-%d %H:%M:%S")
+        history_df["prob"] = history_df["prob"].map(lambda value: f"{value:.3f}")
+        st.dataframe(
+            history_df.rename(
+                columns={
+                    "text": "comment",
+                    "prob": "toxicity_score",
+                    "label": "decision",
+                    "timestamp": "reviewed_at",
+                }
+            ),
+            use_container_width=True,
+            height=420,
+        )
