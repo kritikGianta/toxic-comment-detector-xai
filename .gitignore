@@ -25,6 +25,7 @@ env/
 # Logs
 *.log
 streamlit.log
+toxicity_model/
 
 # Data files (too large for git)
 train.csv
